@@ -24,7 +24,7 @@ import (
 	"net"
 	"os"
 
-	dnsserver "github.com/docker/dnsserver"
+	dnsserver "github.com/erikh/dnsserver"
 )
 
 func main() {
