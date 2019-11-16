@@ -73,22 +73,21 @@ func (ds *DNSServer) qualifySrvHosts(srvs []SRVRecord) []SRVRecord {
 }
 
 // Receives a FQDN; looks up and supplies the A record.
-func (ds *DNSServer) GetA(fqdn string) *dns.A {
+func (ds *DNSServer) GetA(fqdn string) []*dns.A {
 	ds.aMutex.RLock()
 	defer ds.aMutex.RUnlock()
 	val, ok := ds.aRecords[fqdn]
 
 	if ok {
-		return &dns.A{
+		return []*dns.A{&dns.A{
 			Hdr: dns.RR_Header{
 				Name:   fqdn,
 				Rrtype: dns.TypeA,
 				Class:  dns.ClassINET,
-				// 0 TTL results in UB for DNS resolvers and generally causes problems.
-				Ttl: 1,
+				Ttl:    1,
 			},
 			A: val,
-		}
+		}}
 	}
 
 	return nil
@@ -169,17 +168,12 @@ func (ds *DNSServer) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		// nil records == not found
 		switch question.Qtype {
 		case dns.TypeA:
-			a := ds.GetA(question.Name)
-			if a != nil {
-				answers = append(answers, a)
+			for _, record := range ds.GetA(question.Name) {
+				answers = append(answers, record)
 			}
 		case dns.TypeSRV:
-			srv := ds.GetSRV(question.Name)
-
-			if srv != nil {
-				for _, record := range srv {
-					answers = append(answers, record)
-				}
+			for _, record := range ds.GetSRV(question.Name) {
+				answers = append(answers, record)
 			}
 		}
 	}
@@ -188,15 +182,18 @@ func (ds *DNSServer) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	// we can reply to. Reply with no answers so we ensure the query moves on to
 	// the next server.
 	if len(answers) == 0 {
-		m.SetRcode(r, dns.RcodeSuccess)
+		m.SetRcode(r, dns.RcodeNameError)
 		w.WriteMsg(m)
 		return
 	}
 
 	// Without these the glibc resolver gets very angry.
 	m.Authoritative = true
-	m.RecursionAvailable = true
+	m.RecursionAvailable = false
 	m.Answer = answers
 
-	w.WriteMsg(m)
+	m.SetRcode(r, dns.RcodeSuccess)
+	if err := w.WriteMsg(m); err != nil {
+		fmt.Println(err)
+	}
 }
