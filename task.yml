@@ -1,0 +1,5 @@
+mountpoint: "/go/src/github.com/erikh/dnsserver"
+runs:
+  main:
+    image: "golang:latest"
+    command: [ "go", "test", "-v", "./..." ]
