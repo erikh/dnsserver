@@ -3,8 +3,8 @@
 _(This repository is adapted from docker/dnsserver by the original author)_
 
 This provides a very basic API for programming a DNS service that serves over
-UDP. Single A (non-RR) records and SRV records are currently supported,
-although this may change in the future.
+UDP only. A records and simple SRV records are currently supported, although
+this may change in the future.
 
 ## Stability
 
