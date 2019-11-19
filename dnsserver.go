@@ -26,6 +26,7 @@ type DNSServer struct {
 	srvRecords map[string][]SRVRecord // service (e.g., _test._tcp) -> SRV
 	aMutex     sync.RWMutex           // mutex for A record operations
 	srvMutex   sync.RWMutex           // mutex for SRV record operations
+	server     *dns.Server
 }
 
 // Create a new DNS server. Domain is an unqualified domain that will be used
@@ -44,7 +45,17 @@ func NewDNSServer(domain string) *DNSServer {
 // 127.0.0.1:53. This function blocks and only returns when the DNS service is
 // no longer functioning.
 func (ds *DNSServer) Listen(listenSpec string) error {
-	return dns.ListenAndServe(listenSpec, "udp", ds)
+	ds.server = &dns.Server{Addr: listenSpec, Net: "udp", Handler: ds}
+	return ds.server.ListenAndServe()
+}
+
+// Close closes the DNS server. If it is not started, nil is returned.
+func (ds *DNSServer) Close() error {
+	if ds.server != nil {
+		return ds.server.Shutdown()
+	}
+
+	return nil
 }
 
 // Convenience function to ensure the fqdn is well-formed, and keeps the
