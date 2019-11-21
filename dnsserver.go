@@ -41,6 +41,11 @@ func NewDNSServer(domain string) *DNSServer {
 	}
 }
 
+// Listening returns the ip:port of the listener.
+func (ds *DNSServer) Listening() string {
+	return ds.server.Listener.Addr().String()
+}
+
 // Listen for DNS requests. listenSpec is a dotted-quad + port, e.g.,
 // 127.0.0.1:53. This function blocks and only returns when the DNS service is
 // no longer functioning.
