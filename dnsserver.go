@@ -1,6 +1,7 @@
 package dnsserver
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"sync"
@@ -59,10 +60,16 @@ func (ds *DNSServer) Listening() string {
 // no longer functioning.
 func (ds *DNSServer) Listen(listenSpec string) error {
 	ds.configMutex.Lock()
-	ds.server = &dns.Server{Addr: listenSpec, Net: "udp", Handler: ds}
+	var lc net.ListenConfig
+	conn, err := lc.ListenPacket(context.Background(), "udp", listenSpec)
+	if err != nil {
+		ds.configMutex.Unlock()
+		return err
+	}
+	ds.server = &dns.Server{PacketConn: conn, Addr: listenSpec, Net: "udp", Handler: ds}
 	ds.listening = true
 	ds.configMutex.Unlock()
-	return ds.server.ListenAndServe()
+	return ds.server.ActivateAndServe()
 }
 
 // Close closes the DNS server. If it is not started, nil is returned.
