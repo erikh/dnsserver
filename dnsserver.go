@@ -28,6 +28,7 @@ type DNSServer struct {
 	srvMutex    sync.RWMutex           // mutex for SRV record operations
 	server      *dns.Server
 	configMutex sync.Mutex // mutex for server configuration operations
+	listening   bool
 }
 
 // Create a new DNS server. Domain is an unqualified domain that will be used
@@ -46,7 +47,11 @@ func NewDNSServer(domain string) *DNSServer {
 func (ds *DNSServer) Listening() string {
 	ds.configMutex.Lock()
 	defer ds.configMutex.Unlock()
-	return ds.server.PacketConn.LocalAddr().String()
+	if ds.listening && ds.server != nil && ds.server.PacketConn != nil {
+		return ds.server.PacketConn.LocalAddr().String()
+	}
+
+	return ""
 }
 
 // Listen for DNS requests. listenSpec is a dotted-quad + port, e.g.,
@@ -55,6 +60,7 @@ func (ds *DNSServer) Listening() string {
 func (ds *DNSServer) Listen(listenSpec string) error {
 	ds.configMutex.Lock()
 	ds.server = &dns.Server{Addr: listenSpec, Net: "udp", Handler: ds}
+	ds.listening = true
 	ds.configMutex.Unlock()
 	return ds.server.ListenAndServe()
 }
