@@ -21,12 +21,13 @@ func (s SRVRecord) Equal(s2 SRVRecord) bool {
 
 // Struct which describes the DNS server.
 type DNSServer struct {
-	Domain     string                 // using the constructor, this will always end in a '.', making it a FQDN.
-	aRecords   map[string]net.IP      // FQDN -> IP
-	srvRecords map[string][]SRVRecord // service (e.g., _test._tcp) -> SRV
-	aMutex     sync.RWMutex           // mutex for A record operations
-	srvMutex   sync.RWMutex           // mutex for SRV record operations
-	server     *dns.Server
+	Domain      string                 // using the constructor, this will always end in a '.', making it a FQDN.
+	aRecords    map[string]net.IP      // FQDN -> IP
+	srvRecords  map[string][]SRVRecord // service (e.g., _test._tcp) -> SRV
+	aMutex      sync.RWMutex           // mutex for A record operations
+	srvMutex    sync.RWMutex           // mutex for SRV record operations
+	server      *dns.Server
+	configMutex sync.Mutex // mutex for server configuration operations
 }
 
 // Create a new DNS server. Domain is an unqualified domain that will be used
@@ -43,6 +44,8 @@ func NewDNSServer(domain string) *DNSServer {
 
 // Listening returns the ip:port of the listener.
 func (ds *DNSServer) Listening() string {
+	ds.configMutex.Lock()
+	defer ds.configMutex.Unlock()
 	return ds.server.PacketConn.LocalAddr().String()
 }
 
@@ -50,12 +53,17 @@ func (ds *DNSServer) Listening() string {
 // 127.0.0.1:53. This function blocks and only returns when the DNS service is
 // no longer functioning.
 func (ds *DNSServer) Listen(listenSpec string) error {
+	ds.configMutex.Lock()
 	ds.server = &dns.Server{Addr: listenSpec, Net: "udp", Handler: ds}
+	ds.configMutex.Unlock()
 	return ds.server.ListenAndServe()
 }
 
 // Close closes the DNS server. If it is not started, nil is returned.
 func (ds *DNSServer) Close() error {
+	ds.configMutex.Lock()
+	defer ds.configMutex.Unlock()
+
 	if ds.server != nil {
 		return ds.server.Shutdown()
 	}
