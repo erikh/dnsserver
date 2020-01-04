@@ -5,6 +5,7 @@ import (
 	"net"
 	"testing"
 
+	"github.com/erikh/dnsserver/db"
 	"github.com/miekg/dns"
 )
 
@@ -12,7 +13,7 @@ import (
 // my machine. Basically I don't want to have to write a port allocator.
 const service = "127.0.0.1:5300"
 
-var server = NewDNSServer("docker")
+var server = New("docker")
 
 func init() {
 	go func() {
@@ -90,9 +91,9 @@ func TestARecordCRUD(t *testing.T) {
 }
 
 func TestSRVRecordCRUD(t *testing.T) {
-	table := map[string][]SRVRecord{
-		"test":  {{80, "test"}},
-		"test2": {{81, "test2"}},
+	table := map[string]*db.SRVRecord{
+		"test":  &db.SRVRecord{Port: 80, Host: "test"},
+		"test2": &db.SRVRecord{Port: 81, Host: "test2"},
 	}
 
 	// do this in independent parts so both records exist. This tests some
@@ -132,7 +133,7 @@ func TestSRVRecordCRUD(t *testing.T) {
 			t.Fatal("Defaults for priority and weight do not equal 0")
 		}
 
-		if srvRecord.Port != srv[0].Port || srvRecord.Target != fmt.Sprintf("%s.docker.", name) {
+		if srvRecord.Port != srv.Port || srvRecord.Target != fmt.Sprintf("%s.docker.", name) {
 			t.Fatalf("SRV records are not equivalent: received host %q port %d", srvRecord.Target, srvRecord.Port)
 		}
 	}

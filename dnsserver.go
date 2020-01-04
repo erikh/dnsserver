@@ -6,47 +6,31 @@ import (
 	"net"
 	"sync"
 
+	"github.com/erikh/dnsserver/db"
 	"github.com/miekg/dns"
 )
 
-// Encapsulates the data segment of a SRV record. Priority and Weight are
-// always 0 in our SRV records.
-type SRVRecord struct {
-	Port uint16
-	Host string
-}
-
-func (s SRVRecord) Equal(s2 SRVRecord) bool {
-	return s.Port == s2.Port && s.Host == s2.Host
-}
-
-// Struct which describes the DNS server.
-type DNSServer struct {
-	Domain      string                 // using the constructor, this will always end in a '.', making it a FQDN.
-	aRecords    map[string]net.IP      // FQDN -> IP
-	srvRecords  map[string][]SRVRecord // service (e.g., _test._tcp) -> SRV
-	aMutex      sync.RWMutex           // mutex for A record operations
-	srvMutex    sync.RWMutex           // mutex for SRV record operations
+// Server is the struct which describes the DNS server.
+type Server struct {
+	domain      string // using the constructor, this will always end in a '.', making it a FQDN.
+	db          db.DB
 	server      *dns.Server
 	configMutex sync.Mutex // mutex for server configuration operations
 	listenIP    net.IP
 	listenPort  uint
 }
 
-// Create a new DNS server. Domain is an unqualified domain that will be used
+// New creates a new DNS server. Domain is an unqualified domain that will be used
 // as the TLD.
-func NewDNSServer(domain string) *DNSServer {
-	return &DNSServer{
-		Domain:     domain + ".",
-		aRecords:   map[string]net.IP{},
-		srvRecords: map[string][]SRVRecord{},
-		aMutex:     sync.RWMutex{},
-		srvMutex:   sync.RWMutex{},
+func New(domain string) *Server {
+	return &Server{
+		domain: domain + ".",
+		db:     db.NewMap(),
 	}
 }
 
 // Listening returns the ip:port of the listener.
-func (ds *DNSServer) Listening() (net.IP, uint) {
+func (ds *Server) Listening() (net.IP, uint) {
 	ds.configMutex.Lock()
 	defer ds.configMutex.Unlock()
 	return ds.listenIP, ds.listenPort
@@ -55,7 +39,7 @@ func (ds *DNSServer) Listening() (net.IP, uint) {
 // Listen for DNS requests. listenSpec is a dotted-quad + port, e.g.,
 // 127.0.0.1:53. This function blocks and only returns when the DNS service is
 // no longer functioning.
-func (ds *DNSServer) Listen(listenSpec string) error {
+func (ds *Server) Listen(listenSpec string) error {
 	ds.configMutex.Lock()
 	var lc net.ListenConfig
 	conn, err := lc.ListenPacket(context.Background(), "udp", listenSpec)
@@ -71,7 +55,7 @@ func (ds *DNSServer) Listen(listenSpec string) error {
 }
 
 // Close closes the DNS server. If it is not started, nil is returned.
-func (ds *DNSServer) Close() error {
+func (ds *Server) Close() error {
 	ds.configMutex.Lock()
 	defer ds.configMutex.Unlock()
 
@@ -84,116 +68,97 @@ func (ds *DNSServer) Close() error {
 
 // Convenience function to ensure the fqdn is well-formed, and keeps the
 // set/delete interface easy.
-func (ds *DNSServer) qualifyHost(host string) string {
-	return host + "." + ds.Domain
+func (ds *Server) qualifyHost(host string) string {
+	return host + "." + ds.domain
 }
 
 // Convenience function to ensure that SRV names are well-formed.
-func (ds *DNSServer) qualifySrv(service, protocol string) string {
-	return fmt.Sprintf("_%s._%s.%s", service, protocol, ds.Domain)
+func (ds *Server) qualifySrv(service, protocol string) string {
+	return fmt.Sprintf("_%s._%s.%s", service, protocol, ds.domain)
 }
 
-// rewrites supplied host entries to use the domain this dns server manages
-func (ds *DNSServer) qualifySrvHosts(srvs []SRVRecord) []SRVRecord {
-	newsrvs := []SRVRecord{}
-
-	for _, srv := range srvs {
-		newsrvs = append(newsrvs, SRVRecord{
-			Host: ds.qualifyHost(srv.Host),
-			Port: srv.Port,
-		})
-	}
-
-	return newsrvs
+// rewrites supplied host entries to use the domain this dns server manages.
+// Returns and modifies the pointer.
+func (ds *Server) qualifySrvHost(srv *db.SRVRecord) *db.SRVRecord {
+	srv.Host = ds.qualifyHost(srv.Host)
+	return srv
 }
 
-// Receives a FQDN; looks up and supplies the A record.
-func (ds *DNSServer) GetA(fqdn string) []*dns.A {
-	ds.aMutex.RLock()
-	defer ds.aMutex.RUnlock()
-	val, ok := ds.aRecords[fqdn]
-
-	if ok {
-		return []*dns.A{&dns.A{
-			Hdr: dns.RR_Header{
-				Name:   fqdn,
-				Rrtype: dns.TypeA,
-				Class:  dns.ClassINET,
-				Ttl:    1,
-			},
-			A: val,
-		}}
-	}
-
-	return nil
-}
-
-// Sets a host to an IP. Note that this is not the FQDN, but a hostname.
-func (ds *DNSServer) SetA(host string, ip net.IP) {
-	ds.aMutex.Lock()
-	ds.aRecords[ds.qualifyHost(host)] = ip
-	ds.aMutex.Unlock()
-}
-
-// Deletes a host. Note that this is not the FQDN, but a hostname.
-func (ds *DNSServer) DeleteA(host string) {
-	ds.aMutex.Lock()
-	delete(ds.aRecords, ds.qualifyHost(host))
-	ds.aMutex.Unlock()
-}
-
-// Given a service spec, looks up and returns an array of *dns.SRV objects.
-// These must be massaged into the []dns.RR after the fact.
-func (ds *DNSServer) GetSRV(spec string) []*dns.SRV {
-	ds.srvMutex.RLock()
-	defer ds.srvMutex.RUnlock()
-
-	srv, ok := ds.srvRecords[spec]
-
-	if ok {
-		records := []*dns.SRV{}
-		for _, record := range srv {
-			srvRecord := &dns.SRV{
-				Hdr: dns.RR_Header{
-					Name:   spec,
-					Rrtype: dns.TypeSRV,
-					Class:  dns.ClassINET,
-					// 0 TTL results in UB for DNS resolvers and generally causes problems.
-					Ttl: 1,
-				},
-				Priority: 0,
-				Weight:   0,
-				Port:     record.Port,
-				Target:   record.Host,
-			}
-
-			records = append(records, srvRecord)
+// GetA receives a FQDN; looks up and supplies the A record.
+func (ds *Server) GetA(fqdn string) []*dns.A {
+	val, err := ds.db.GetA(fqdn)
+	if err != nil {
+		if err != db.ErrNotFound {
+			fmt.Println(err)
 		}
-
-		return records
+		return nil
 	}
+
+	return []*dns.A{&dns.A{
+		Hdr: dns.RR_Header{
+			Name:   fqdn,
+			Rrtype: dns.TypeA,
+			Class:  dns.ClassINET,
+			Ttl:    1,
+		},
+		A: val,
+	}}
 
 	return nil
 }
 
-// Sets a SRV with a service and protocol. See SRVRecord for more information
+// SetA sets a host to an IP. Note that this is not the FQDN, but a hostname.
+func (ds *Server) SetA(host string, ip net.IP) {
+	ds.db.SetA(ds.qualifyHost(host), ip)
+}
+
+// DeleteA deletes a host. Note that this is not the FQDN, but a hostname.
+func (ds *Server) DeleteA(host string) {
+	ds.db.DeleteA(ds.qualifyHost(host))
+}
+
+// GetSRV given a service spec, looks up and returns an array of *dns.SRV objects.
+// These must be massaged into the []dns.RR after the fact.
+func (ds *Server) GetSRV(spec string) []*dns.SRV {
+	srv, err := ds.db.GetSRV(spec)
+	if err != nil {
+		if err != db.ErrNotFound {
+			fmt.Println(err)
+		}
+		return nil
+	}
+
+	srvRecord := &dns.SRV{
+		Hdr: dns.RR_Header{
+			Name:   spec,
+			Rrtype: dns.TypeSRV,
+			Class:  dns.ClassINET,
+			// 0 TTL results in UB for DNS resolvers and generally causes problems.
+			Ttl: 1,
+		},
+		Priority: 0,
+		Weight:   0,
+		Port:     srv.Port,
+		Target:   srv.Host,
+	}
+
+	return []*dns.SRV{srvRecord}
+}
+
+// SetSRV sets a SRV with a service and protocol. See SRVRecord for more information
 // on what that requires.
-func (ds *DNSServer) SetSRV(service, protocol string, srvs []SRVRecord) {
-	ds.srvMutex.Lock()
-	ds.srvRecords[ds.qualifySrv(service, protocol)] = ds.qualifySrvHosts(srvs)
-	ds.srvMutex.Unlock()
+func (ds *Server) SetSRV(service, protocol string, srv *db.SRVRecord) error {
+	return ds.db.SetSRV(ds.qualifySrv(service, protocol), ds.qualifySrvHost(srv))
 }
 
-// Deletes a SRV record based on the service and protocol.
-func (ds *DNSServer) DeleteSRV(service, protocol string) {
-	ds.srvMutex.Lock()
-	delete(ds.srvRecords, ds.qualifySrv(service, protocol))
-	ds.srvMutex.Unlock()
+// DeleteSRV deletes a SRV record based on the service and protocol.
+func (ds *Server) DeleteSRV(service, protocol string) {
+	ds.db.DeleteSRV(ds.qualifySrv(service, protocol))
 }
 
-// Main callback for miekg/dns. Collects information about the query,
-// constructs a response, and returns it to the connector.
-func (ds *DNSServer) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
+// ServeDNS is the main callback for miekg/dns. Collects information about the
+// query, constructs a response, and returns it to the connector.
+func (ds *Server) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	m := &dns.Msg{}
 	m.SetReply(r)
 
