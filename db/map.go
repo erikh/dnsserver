@@ -36,10 +36,12 @@ func (m *Map) SetA(host string, ip net.IP) error {
 }
 
 // DeleteA deletes an A record for a host. Note that this is not the FQDN, but a hostname.
-func (m *Map) DeleteA(host string) {
+func (m *Map) DeleteA(host string) error {
 	m.aMutex.Lock()
 	delete(m.aRecords, host)
 	m.aMutex.Unlock()
+
+	return nil
 }
 
 // GetA retrieves an A record by FQDN.
@@ -52,6 +54,22 @@ func (m *Map) GetA(fqdn string) (net.IP, error) {
 	}
 
 	return val, nil
+}
+
+// ListA lists all the A records in the database.
+func (m *Map) ListA() (map[string]net.IP, error) {
+	m.aMutex.RLock()
+	defer m.aMutex.RUnlock()
+
+	tmp := map[string]net.IP{}
+
+	for name, rec := range m.aRecords {
+		ip := net.IP{}
+		copy(ip, rec)
+		tmp[name] = ip
+	}
+
+	return tmp, nil
 }
 
 // SetSRV sets a srv record with service and protocol pointing at a name and port.
@@ -75,9 +93,26 @@ func (m *Map) GetSRV(spec string) (*SRVRecord, error) {
 	return srv, nil
 }
 
+// ListSRV lists all SRV records in the database.
+func (m *Map) ListSRV() (map[string]*SRVRecord, error) {
+	tmp := map[string]*SRVRecord{}
+
+	m.srvMutex.RLock()
+	defer m.srvMutex.RUnlock()
+
+	for name, rec := range m.srvRecords {
+		t := *rec
+		tmp[name] = &t
+	}
+
+	return tmp, nil
+}
+
 // DeleteSRV deletes a SRV record based on the service and protocol.
-func (m *Map) DeleteSRV(spec string) {
+func (m *Map) DeleteSRV(spec string) error {
 	m.srvMutex.Lock()
 	delete(m.srvRecords, spec)
 	m.srvMutex.Unlock()
+
+	return nil
 }

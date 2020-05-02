@@ -10,10 +10,12 @@ import (
 type DB interface {
 	SetA(string, net.IP) error
 	GetA(string) (net.IP, error)
-	DeleteA(string)
+	DeleteA(string) error
+	ListA() (map[string]net.IP, error)
 	SetSRV(string, *SRVRecord) error
 	GetSRV(string) (*SRVRecord, error)
-	DeleteSRV(string)
+	DeleteSRV(string) error
+	ListSRV() (map[string]*SRVRecord, error)
 	Close() error
 }
 
