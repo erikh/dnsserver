@@ -23,9 +23,15 @@ type Server struct {
 // New creates a new DNS server. Domain is an unqualified domain that will be used
 // as the TLD.
 func New(domain string) *Server {
+	return NewWithDB(domain, db.NewMap())
+}
+
+// NewWithDB allows you to provide a custom DB implementation during
+// construction.
+func NewWithDB(domain string, db db.DB) *Server {
 	return &Server{
 		domain: domain + ".",
-		db:     db.NewMap(),
+		db:     db,
 	}
 }
 
@@ -103,8 +109,6 @@ func (ds *Server) GetA(fqdn string) []*dns.A {
 		},
 		A: val,
 	}}
-
-	return nil
 }
 
 // SetA sets a host to an IP. Note that this is not the FQDN, but a hostname.
