@@ -42,6 +42,18 @@ func TestARecordCRUD(t *testing.T) {
 		server.SetA(host, ip)
 	}
 
+	recs, err := server.ListA()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for host, ip := range table {
+		recIP := recs[host+".docker."] // HACK until I get a better API in
+		if !ip.Equal(recIP) {
+			t.Fatalf("ips were not equal for %q", host)
+		}
+	}
+
 	for host, ip := range table {
 		msg, err := msgClient(fmt.Sprintf("%s.docker.", host), dns.TypeA)
 
@@ -100,6 +112,18 @@ func TestSRVRecordCRUD(t *testing.T) {
 	// collision issues.
 	for name, srv := range table {
 		server.SetSRV(name, "tcp", srv)
+	}
+
+	recs, err := server.ListSRV()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for host, srv := range table {
+		recSRV := recs["_"+host+"._tcp.docker."] // HACK until I get a better API in
+		if !srv.Equal(recSRV) {
+			t.Fatalf("srv records were not equal for %q", host)
+		}
 	}
 
 	for name, srv := range table {

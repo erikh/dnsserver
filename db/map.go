@@ -64,9 +64,7 @@ func (m *Map) ListA() (map[string]net.IP, error) {
 	tmp := map[string]net.IP{}
 
 	for name, rec := range m.aRecords {
-		ip := net.IP{}
-		copy(ip, rec)
-		tmp[name] = ip
+		tmp[name] = rec[:]
 	}
 
 	return tmp, nil

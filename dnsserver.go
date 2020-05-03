@@ -112,13 +112,23 @@ func (ds *Server) GetA(fqdn string) []*dns.A {
 }
 
 // SetA sets a host to an IP. Note that this is not the FQDN, but a hostname.
-func (ds *Server) SetA(host string, ip net.IP) {
-	ds.db.SetA(ds.qualifyHost(host), ip)
+func (ds *Server) SetA(host string, ip net.IP) error {
+	return ds.db.SetA(ds.qualifyHost(host), ip)
 }
 
 // DeleteA deletes a host. Note that this is not the FQDN, but a hostname.
-func (ds *Server) DeleteA(host string) {
-	ds.db.DeleteA(ds.qualifyHost(host))
+func (ds *Server) DeleteA(host string) error {
+	return ds.db.DeleteA(ds.qualifyHost(host))
+}
+
+// ListA lists all A records.
+func (ds *Server) ListA() (map[string]net.IP, error) {
+	return ds.db.ListA()
+}
+
+// ListSRV lists all SRV records.
+func (ds *Server) ListSRV() (map[string]*db.SRVRecord, error) {
+	return ds.db.ListSRV()
 }
 
 // GetSRV given a service spec, looks up and returns an array of *dns.SRV objects.
@@ -156,8 +166,8 @@ func (ds *Server) SetSRV(service, protocol string, srv *db.SRVRecord) error {
 }
 
 // DeleteSRV deletes a SRV record based on the service and protocol.
-func (ds *Server) DeleteSRV(service, protocol string) {
-	ds.db.DeleteSRV(ds.qualifySrv(service, protocol))
+func (ds *Server) DeleteSRV(service, protocol string) error {
+	return ds.db.DeleteSRV(ds.qualifySrv(service, protocol))
 }
 
 // ServeDNS is the main callback for miekg/dns. Collects information about the

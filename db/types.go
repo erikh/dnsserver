@@ -8,6 +8,6 @@ type SRVRecord struct {
 }
 
 // Equal tests if the srvrecords are equal.
-func (s SRVRecord) Equal(s2 SRVRecord) bool {
+func (s *SRVRecord) Equal(s2 *SRVRecord) bool {
 	return s.Port == s2.Port && s.Host == s2.Host
 }
