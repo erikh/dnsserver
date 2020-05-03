@@ -3,6 +3,7 @@ package dnsserver
 import (
 	"fmt"
 	"net"
+	"reflect"
 	"testing"
 
 	"github.com/erikh/dnsserver/db"
@@ -47,11 +48,8 @@ func TestARecordCRUD(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for host, ip := range table {
-		recIP := recs[host+".docker."] // HACK until I get a better API in
-		if !ip.Equal(recIP) {
-			t.Fatalf("ips were not equal for %q", host)
-		}
+	if !reflect.DeepEqual(recs, table) {
+		t.Fatal("tables are not equal")
 	}
 
 	for host, ip := range table {
@@ -120,7 +118,7 @@ func TestSRVRecordCRUD(t *testing.T) {
 	}
 
 	for host, srv := range table {
-		recSRV := recs["_"+host+"._tcp.docker."] // HACK until I get a better API in
+		recSRV := recs["_"+host+"._tcp"] // HACK until I get a better API in
 		if !srv.Equal(recSRV) {
 			t.Fatalf("srv records were not equal for %q", host)
 		}

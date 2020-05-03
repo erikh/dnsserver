@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 
 	"github.com/erikh/dnsserver/db"
@@ -80,7 +81,7 @@ func (ds *Server) qualifyHost(host string) string {
 
 // Convenience function to ensure that SRV names are well-formed.
 func (ds *Server) qualifySrv(service, protocol string) string {
-	return fmt.Sprintf("_%s._%s.%s", service, protocol, ds.domain)
+	return fmt.Sprintf("_%s._%s", service, protocol)
 }
 
 // rewrites supplied host entries to use the domain this dns server manages.
@@ -90,9 +91,15 @@ func (ds *Server) qualifySrvHost(srv *db.SRVRecord) *db.SRVRecord {
 	return srv
 }
 
+func (ds *Server) subdomain(name string) string {
+	// this is probably the worst idea ever.
+	return strings.TrimSuffix(name, "."+ds.domain)
+}
+
 // GetA receives a FQDN; looks up and supplies the A record.
-func (ds *Server) GetA(fqdn string) []*dns.A {
-	val, err := ds.db.GetA(fqdn)
+func (ds *Server) GetA(name string) []*dns.A {
+	sub := ds.subdomain(name)
+	val, err := ds.db.GetA(sub)
 	if err != nil {
 		if err != db.ErrNotFound {
 			fmt.Println(err)
@@ -102,7 +109,7 @@ func (ds *Server) GetA(fqdn string) []*dns.A {
 
 	return []*dns.A{&dns.A{
 		Hdr: dns.RR_Header{
-			Name:   fqdn,
+			Name:   name,
 			Rrtype: dns.TypeA,
 			Class:  dns.ClassINET,
 			Ttl:    1,
@@ -113,12 +120,12 @@ func (ds *Server) GetA(fqdn string) []*dns.A {
 
 // SetA sets a host to an IP. Note that this is not the FQDN, but a hostname.
 func (ds *Server) SetA(host string, ip net.IP) error {
-	return ds.db.SetA(ds.qualifyHost(host), ip)
+	return ds.db.SetA(host, ip)
 }
 
 // DeleteA deletes a host. Note that this is not the FQDN, but a hostname.
 func (ds *Server) DeleteA(host string) error {
-	return ds.db.DeleteA(ds.qualifyHost(host))
+	return ds.db.DeleteA(host)
 }
 
 // ListA lists all A records.
@@ -134,7 +141,8 @@ func (ds *Server) ListSRV() (map[string]*db.SRVRecord, error) {
 // GetSRV given a service spec, looks up and returns an array of *dns.SRV objects.
 // These must be massaged into the []dns.RR after the fact.
 func (ds *Server) GetSRV(spec string) []*dns.SRV {
-	srv, err := ds.db.GetSRV(spec)
+	sub := ds.subdomain(spec)
+	srv, err := ds.db.GetSRV(sub)
 	if err != nil {
 		if err != db.ErrNotFound {
 			fmt.Println(err)
@@ -153,7 +161,7 @@ func (ds *Server) GetSRV(spec string) []*dns.SRV {
 		Priority: 0,
 		Weight:   0,
 		Port:     srv.Port,
-		Target:   srv.Host,
+		Target:   ds.qualifyHost(srv.Host),
 	}
 
 	return []*dns.SRV{srvRecord}
@@ -162,7 +170,7 @@ func (ds *Server) GetSRV(spec string) []*dns.SRV {
 // SetSRV sets a SRV with a service and protocol. See SRVRecord for more information
 // on what that requires.
 func (ds *Server) SetSRV(service, protocol string, srv *db.SRVRecord) error {
-	return ds.db.SetSRV(ds.qualifySrv(service, protocol), ds.qualifySrvHost(srv))
+	return ds.db.SetSRV(ds.qualifySrv(service, protocol), srv)
 }
 
 // DeleteSRV deletes a SRV record based on the service and protocol.
