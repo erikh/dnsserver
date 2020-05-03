@@ -31,6 +31,33 @@ func msgClient(fqdn string, dnsType uint16) (*dns.Msg, error) {
 	return dns.Exchange(m, service)
 }
 
+func BenchmarkARecordQueries(b *testing.B) {
+	table := map[string]net.IP{
+		"test":  net.ParseIP("127.0.0.2"),
+		"test2": net.ParseIP("127.0.0.3"),
+	}
+
+	// do this in independent parts so both records exist. This tests some
+	// collision issues.
+	for host, ip := range table {
+		server.SetA(host, ip)
+	}
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			msg, err := msgClient("test.docker.", dns.TypeA)
+			if err != nil {
+				b.Log(err)
+				continue
+			}
+			aRecord := msg.Answer[0].(*dns.A).A
+			if !aRecord.Equal(table["test"]) {
+				b.Fatalf("IP %q does not match registered IP %q", aRecord, table["test"])
+			}
+		}
+	})
+}
+
 func TestARecordCRUD(t *testing.T) {
 	table := map[string]net.IP{
 		"test":  net.ParseIP("127.0.0.2"),
@@ -68,7 +95,6 @@ func TestARecordCRUD(t *testing.T) {
 	// general message tests
 	for host, ip := range table {
 		msg, err := msgClient(fmt.Sprintf("%s.docker.", host), dns.TypeA)
-
 		if err != nil {
 			t.Fatal(err)
 		}
