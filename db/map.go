@@ -8,17 +8,17 @@ import (
 // Map is a simple in-memory map of DNS entries. These are 1:1 entries, no
 // multiple address forms are permitted.
 type Map struct {
-	aRecords   map[string]net.IP     // FQDN -> IP
-	srvRecords map[string]*SRVRecord // service (e.g., _test._tcp) -> SRV
-	aMutex     sync.RWMutex          // mutex for A record operations
-	srvMutex   sync.RWMutex          // mutex for SRV record operations
+	aRecords   ARecords     // FQDN -> IP
+	srvRecords SRVRecords   // service (e.g., _test._tcp) -> SRV
+	aMutex     sync.RWMutex // mutex for A record operations
+	srvMutex   sync.RWMutex // mutex for SRV record operations
 }
 
 // NewMap makes a new *Map.
 func NewMap() *Map {
 	return &Map{
-		aRecords:   map[string]net.IP{},
-		srvRecords: map[string]*SRVRecord{},
+		aRecords:   ARecords{},
+		srvRecords: SRVRecords{},
 	}
 }
 
@@ -57,11 +57,11 @@ func (m *Map) GetA(fqdn string) (net.IP, error) {
 }
 
 // ListA lists all the A records in the database.
-func (m *Map) ListA() (map[string]net.IP, error) {
+func (m *Map) ListA() (ARecords, error) {
 	m.aMutex.RLock()
 	defer m.aMutex.RUnlock()
 
-	tmp := map[string]net.IP{}
+	tmp := ARecords{}
 
 	for name, rec := range m.aRecords {
 		tmp[name] = rec[:]
@@ -92,8 +92,8 @@ func (m *Map) GetSRV(spec string) (*SRVRecord, error) {
 }
 
 // ListSRV lists all SRV records in the database.
-func (m *Map) ListSRV() (map[string]*SRVRecord, error) {
-	tmp := map[string]*SRVRecord{}
+func (m *Map) ListSRV() (SRVRecords, error) {
+	tmp := SRVRecords{}
 
 	m.srvMutex.RLock()
 	defer m.srvMutex.RUnlock()
