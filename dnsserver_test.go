@@ -52,6 +52,20 @@ func TestARecordCRUD(t *testing.T) {
 		t.Fatal("tables are not equal")
 	}
 
+	// copy/mod check
+
+	recs["test"] = net.ParseIP("5.4.3.2")
+
+	recs2, err := server.ListA()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if reflect.DeepEqual(recs, recs2) {
+		t.Fatal("listing able to modify inner structs of dns server")
+	}
+
+	// general message tests
 	for host, ip := range table {
 		msg, err := msgClient(fmt.Sprintf("%s.docker.", host), dns.TypeA)
 
@@ -122,6 +136,18 @@ func TestSRVRecordCRUD(t *testing.T) {
 		if !srv.Equal(recSRV) {
 			t.Fatalf("srv records were not equal for %q", host)
 		}
+	}
+
+	// copy+mod check
+
+	recs["_test._tcp"] = &db.SRVRecord{Port: 5150, Host: "test-nope"}
+	recs2, err := server.ListSRV()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if reflect.DeepEqual(recs, recs2) {
+		t.Fatal("was able to modify inner struct in dnsserver after list")
 	}
 
 	for name, srv := range table {
